@@ -428,6 +428,16 @@
   </style>
 </head>
 <body>
+<!-- Netlify build-time form scanner target -->
+<form name="waitlist" data-netlify="true" netlify-honeypot="bot-field" style="display:none">
+  <input name="form-name" value="waitlist">
+  <input name="name">
+  <input name="email">
+  <input name="phone">
+  <input name="time">
+  <input name="bot-field">
+</form>
+
 <div id="app">
 
   <!-- GALLERY -->
@@ -473,7 +483,8 @@
 
       <div class="blush-divider"></div>
 
-      <form id="waitlist-form" novalidate>
+      <form id="waitlist-form" name="waitlist" data-netlify="true" netlify-honeypot="bot-field" novalidate>
+        <input type="hidden" name="form-name" value="waitlist">
         <input type="text"  id="inp-name"  name="name"  placeholder="Your name" autocomplete="name">
         <input type="email" id="inp-email" name="email" placeholder="Email address *" required autocomplete="email">
         <input type="tel"   id="inp-phone" name="phone" placeholder="Phone number (optional)" autocomplete="tel">
@@ -635,12 +646,20 @@
     form.style.display = 'none';
     successEl.classList.add('visible');
 
-    // Fire-and-forget
+    // Fire-and-forget — Google Sheets
     fetch(SHEETS_URL, {
       method: 'POST',
       mode:   'no-cors',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(entry)
+    }).catch(() => {});
+
+    // Fire-and-forget — Netlify Forms
+    const enc = v => encodeURIComponent(v);
+    fetch('/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `form-name=waitlist&name=${enc(entry.name)}&email=${enc(entry.email)}&phone=${enc(entry.phone)}&time=${enc(entry.time)}`
     }).catch(() => {});
   });
 
