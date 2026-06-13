@@ -45,23 +45,73 @@
       background: var(--charcoal);
     }
 
-    #gallery-strip,
-    #gallery-strip-clone {
+    #gallery-strip {
       display: flex;
       flex-direction: row;
       height: 100%;
       position: absolute;
       top: 0; left: 0;
-      will-change: transform;
+      transition: transform 0.55s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
-    #gallery-strip img,
-    #gallery-strip-clone img {
+    #gallery-strip img {
       flex-shrink: 0;
+      width: calc(100vw - 380px);
       height: 100%;
-      width: auto;
+      object-fit: contain;
       display: block;
+      user-select: none;
+      -webkit-user-drag: none;
     }
+
+    /* ── Arrows ── */
+    .gallery-arrow {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 3;
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(255,255,255,0.25);
+      background: rgba(14,14,14,0.45);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      color: #fff;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.2s, border-color 0.2s, opacity 0.2s;
+      opacity: 0.7;
+    }
+    .gallery-arrow:hover { background: rgba(181,68,110,0.55); border-color: rgba(181,68,110,0.7); opacity: 1; }
+    .gallery-arrow svg { width: 18px; height: 18px; stroke: #fff; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .gallery-arrow-prev { left: 14px; }
+    .gallery-arrow-next { right: 14px; }
+
+    /* ── Dots ── */
+    #gallery-dots {
+      position: absolute;
+      bottom: 18px;
+      left: 50%; transform: translateX(-50%);
+      z-index: 3;
+      display: flex;
+      gap: 8px;
+    }
+    .gallery-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255,255,255,0.35);
+      cursor: pointer;
+      padding: 0;
+      transition: background 0.25s, transform 0.25s;
+    }
+    .gallery-dot.active {
+      background: var(--rose);
+      transform: scale(1.3);
+    }
+
+    #gallery-wrap { cursor: grab; }
+    #gallery-wrap.dragging { cursor: grabbing; }
 
     #gallery-wrap::before,
     #gallery-wrap::after {
@@ -456,28 +506,98 @@
 
 <script>
 (function () {
-  const wrap  = document.getElementById('gallery-wrap');
-  const strip = document.getElementById('gallery-strip');
+  const wrap   = document.getElementById('gallery-wrap');
+  const strip  = document.getElementById('gallery-strip');
+  const slides = Array.from(strip.querySelectorAll('img'));
+  const total  = slides.length;
+  let current  = 0;
+  let autoTimer = null;
+  let pauseTimer = null;
 
-  // Clone the strip for seamless loop
-  const clone = strip.cloneNode(true);
-  clone.id    = 'gallery-strip-clone';
-  clone.setAttribute('aria-hidden', 'true');
-  wrap.appendChild(clone);
+  // ── Arrows ──────────────────────────────────────────────────────────────
+  function makeArrow(dir) {
+    const btn = document.createElement('button');
+    btn.className = `gallery-arrow gallery-arrow-${dir}`;
+    btn.setAttribute('aria-label', dir === 'prev' ? 'Previous photo' : 'Next photo');
+    btn.innerHTML = dir === 'prev'
+      ? '<svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>'
+      : '<svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>';
+    btn.addEventListener('click', () => { goTo(dir === 'prev' ? current - 1 : current + 1); pauseThenResume(); });
+    return btn;
+  }
+  wrap.appendChild(makeArrow('prev'));
+  wrap.appendChild(makeArrow('next'));
 
-  let offset = 0;
-  const SPEED = 0.5;
+  // ── Dots ────────────────────────────────────────────────────────────────
+  const dotsEl = document.createElement('div');
+  dotsEl.id = 'gallery-dots';
+  slides.forEach((_, i) => {
+    const dot = document.createElement('button');
+    dot.className = 'gallery-dot';
+    dot.setAttribute('aria-label', `Photo ${i + 1}`);
+    dot.addEventListener('click', () => { goTo(i); pauseThenResume(); });
+    dotsEl.appendChild(dot);
+  });
+  wrap.appendChild(dotsEl);
 
-  function tick() {
-    const w = strip.offsetWidth;
-    if (w === 0) { requestAnimationFrame(tick); return; }
-    offset = (offset + SPEED) % w;
-    strip.style.transform = `translateX(${-offset}px)`;
-    clone.style.transform  = `translateX(${w - offset}px)`;
-    requestAnimationFrame(tick);
+  // ── Core ────────────────────────────────────────────────────────────────
+  function goTo(i, instant) {
+    current = ((i % total) + total) % total;
+    if (instant) strip.style.transition = 'none';
+    strip.style.transform = `translateX(${-current * wrap.offsetWidth}px)`;
+    if (instant) requestAnimationFrame(() => { strip.style.transition = ''; });
+    updateDots();
   }
 
-  requestAnimationFrame(tick);
+  function updateDots() {
+    dotsEl.querySelectorAll('.gallery-dot').forEach((d, i) => d.classList.toggle('active', i === current));
+  }
+
+  function startAuto() {
+    clearInterval(autoTimer);
+    autoTimer = setInterval(() => goTo(current + 1), 4500);
+  }
+
+  function pauseThenResume() {
+    clearInterval(autoTimer);
+    clearTimeout(pauseTimer);
+    pauseTimer = setTimeout(startAuto, 10000);
+  }
+
+  // ── Drag (touch + mouse) ─────────────────────────────────────────────────
+  let dragStartX = null;
+  let isDragging = false;
+
+  function onDragStart(x) {
+    dragStartX = x;
+    isDragging = true;
+    wrap.classList.add('dragging');
+  }
+
+  function onDragEnd(x) {
+    if (!isDragging) return;
+    isDragging = false;
+    wrap.classList.remove('dragging');
+    const dx = x - dragStartX;
+    if (Math.abs(dx) > 50) {
+      goTo(dx < 0 ? current + 1 : current - 1);
+      pauseThenResume();
+    }
+    dragStartX = null;
+  }
+
+  wrap.addEventListener('touchstart', e => onDragStart(e.touches[0].clientX), { passive: true });
+  wrap.addEventListener('touchend',   e => onDragEnd(e.changedTouches[0].clientX), { passive: true });
+  wrap.addEventListener('mousedown',  e => { onDragStart(e.clientX); e.preventDefault(); });
+  window.addEventListener('mouseup',  e => onDragEnd(e.clientX));
+  wrap.addEventListener('dragstart',  e => e.preventDefault());
+
+  // Snap to current slide on resize
+  window.addEventListener('resize', () => goTo(current, true));
+
+  // ── Init ────────────────────────────────────────────────────────────────
+  goTo(0, true);
+  startAuto();
 })();
 
 (function () {
