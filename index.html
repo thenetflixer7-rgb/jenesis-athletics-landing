@@ -51,7 +51,7 @@
       height: 100%;
       position: absolute;
       top: 0; left: 0;
-      transition: transform 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: transform 0.65s ease-in-out;
     }
 
     #gallery-strip img {
@@ -63,6 +63,15 @@
       display: block;
       user-select: none;
       -webkit-user-drag: none;
+    }
+
+    /* IMG_4607.JPG — portrait pool/mountain, full-body sitting pose.
+       At viewports wider than ~1240px the slot flips to width-filling,
+       creating vertical overflow. Biasing to 20% from top keeps the
+       model's face + full swimsuit in frame while cropping distant
+       background sky and feet rather than the outfit. */
+    #gallery-strip img:nth-child(4) {
+      object-position: center 20%;
     }
 
     /* ── Arrows ── */
@@ -606,26 +615,50 @@
     pauseTimer = setTimeout(startAuto, 10000);
   }
 
-  // ── Drag (touch + mouse) ─────────────────────────────────────────────────
-  let dragStartX = null;
-  let isDragging = false;
+  // ── Drag — real-time follow (touch + mouse) ──────────────────────────────
+  let dragStartX      = null;
+  let dragBaseOffset  = 0;   // strip translateX when drag began
+  let isDragging      = false;
 
-  function onDragStart(x) { dragStartX = x; isDragging = true; wrap.classList.add('dragging'); }
+  function onDragStart(x) {
+    // Abort any pending seamless snap so the strip is where it appears
+    if (snapPending) { strip.removeEventListener('transitionend', snapPending); snapPending = null; }
+    dragStartX     = x;
+    isDragging     = true;
+    dragBaseOffset = -current * slotW();
+    strip.style.transition = 'none';   // disable — strip follows finger exactly
+    wrap.classList.add('dragging');
+  }
+
+  function onDragMove(x) {
+    if (!isDragging) return;
+    strip.style.transform = `translateX(${dragBaseOffset + (x - dragStartX)}px)`;
+  }
 
   function onDragEnd(x) {
     if (!isDragging) return;
     isDragging = false;
     wrap.classList.remove('dragging');
+    strip.style.transition = '';       // restore CSS transition for snap animation
+
     const dx = x - dragStartX;
-    if (Math.abs(dx) > 50) { goTo(dx < 0 ? current + 1 : current - 1); pauseThenResume(); }
+    if (Math.abs(dx) > 50) {
+      goTo(dx < 0 ? current + 1 : current - 1);
+      pauseThenResume();
+    } else {
+      // Not far enough — animate back to current position
+      strip.style.transform = `translateX(${-current * slotW()}px)`;
+    }
     dragStartX = null;
   }
 
   wrap.addEventListener('touchstart', e => onDragStart(e.touches[0].clientX), { passive: true });
+  wrap.addEventListener('touchmove',  e => onDragMove(e.touches[0].clientX),  { passive: true });
   wrap.addEventListener('touchend',   e => onDragEnd(e.changedTouches[0].clientX), { passive: true });
   wrap.addEventListener('mousedown',  e => { onDragStart(e.clientX); e.preventDefault(); });
-  window.addEventListener('mouseup',  e => onDragEnd(e.clientX));
-  wrap.addEventListener('dragstart',  e => e.preventDefault());
+  window.addEventListener('mousemove', e => onDragMove(e.clientX));
+  window.addEventListener('mouseup',   e => onDragEnd(e.clientX));
+  wrap.addEventListener('dragstart',   e => e.preventDefault());
 
   window.addEventListener('resize', () => goTo(current, true));
 
